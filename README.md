@@ -1,4 +1,6 @@
-# Sistema Juan — Socopo (reversa de `pnf.exe` + reimplementación Python)
+# UPTBJFRPNF — Sistema Juan / Socopo (reversa de `pnf.exe` + reimplementación Python)
+
+🔗 **Repositorio:** https://github.com/ryuhen/UPTBJFRPNF
 
 Repo **independiente** del proyecto `CASRCESUPABASE`. Aquí vive todo lo
 relacionado con el sistema legado de Control de Estudios de la sede Socopo
@@ -57,6 +59,6 @@ git init
 git add .
 git commit -m "Inicio: reversa de pnf.exe (Harbour) y reimplementacion pnfPY"
 git branch -M main
-git remote add origin https://github.com/<usuario>/<repo>.git
+git remote add origin https://github.com/ryuhen/UPTBJFRPNF.git
 git push -u origin main
 ```
