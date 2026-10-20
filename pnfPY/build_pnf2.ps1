@@ -13,10 +13,21 @@
 # ============================================================================
 $ErrorActionPreference = "Stop"
 
-# Raiz del proyecto = carpeta padre de este script
-$BuildDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$Raiz = Split-Path -Parent $BuildDir
+# Raiz del proyecto = la propia carpeta del script (script en pnfPY\,
+# spec en pnfPY\build\pnf2.spec)
+$Raiz = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $Raiz
+
+# En este repo el script vive en pnfPY\ (raiz) y el .spec en pnfPY\build\
+# Si el .spec no esta junto al script, se usa la subcarpeta build.
+if (Test-Path (Join-Path $Raiz "pnf2.spec")) {
+    $Spec = Join-Path $Raiz "pnf2.spec"
+} elseif (Test-Path (Join-Path $Raiz "build\pnf2.spec")) {
+    $Spec = Join-Path $Raiz "build\pnf2.spec"
+} else {
+    Write-Host "No se encontro pnf2.spec" -ForegroundColor Red
+    exit 1
+}
 
 Write-Host "== pnfPY: construyendo pnf2.exe ==" -ForegroundColor Cyan
 Write-Host "Raiz: $Raiz"
@@ -28,7 +39,7 @@ foreach ($d in @("build\dist", "build\work", "dist", "build\__pycache__")) {
 
 # 2) Ejecutar PyInstaller con el spec
 Write-Host "`n-- PyInstaller --" -ForegroundColor Yellow
-python -m PyInstaller "build\pnf2.spec" `
+python -m PyInstaller $Spec `
     --noconfirm `
     --distpath "build\dist" `
     --workpath "build\work"

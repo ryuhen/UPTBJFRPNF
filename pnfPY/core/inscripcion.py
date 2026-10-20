@@ -47,6 +47,12 @@ class Resultado:
 # --------------------------------------------------------------------------- #
 #  Helpers de escritura DBF (append / marcar borrado)
 # --------------------------------------------------------------------------- #
+def _respaldo(path: str, motivo: str) -> None:
+    """Copia de seguridad antes de escribir (evita import circular)."""
+    from .multiusuario import escribir_dbf
+    escribir_dbf(path, motivo)
+
+
 def _dbf_header_info(path: str) -> tuple[int, int, int]:
     """Devuelve (n_records, header_len, record_len) de un DBF."""
     with open(path, "rb") as fh:
@@ -248,6 +254,9 @@ def inscribir(ds: DataStore, cedula: str, seccion: Seccion,
     if not ins_path:
         return Resultado(False, f"No existe el archivo INS{periodo}.DBF en la sede.")
 
+    # Red de seguridad: copia previa en DATA\_respaldos\ (nunca se reemplaza).
+    _respaldo(ins_path, f"inscribir_{ced}")
+
     valores = {
         "A_ID": ced,
         "CARRERA": seccion.pnf_codigo,
@@ -314,7 +323,10 @@ def anular(ds: DataStore, cedula: str, codigo: str,
 
     # Necesitamos el indice real en el archivo (read_dbf puede omitir borrados)
     real = _indice_real(ins_path, ced, str(codigo))
-    if real is None or not marcar_borrado(ins_path, real):
+    if real is None:
+        return Resultado(False, "No se pudo anular la inscripcion.")
+    _respaldo(ins_path, f"anular_{ced}")
+    if not marcar_borrado(ins_path, real):
         return Resultado(False, "No se pudo anular la inscripcion.")
 
     ds.cargado = False

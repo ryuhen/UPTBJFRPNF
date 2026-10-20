@@ -234,7 +234,62 @@ débil que dispara alertas), por lo que viaja por correo/redes sin bloqueos.
 pip install openpyxl msoffcrypto-tool pyzipper
 ```
 
-## 6. Estado
+## 6. Inscripcion con VARIOS usuarios (registro temporal)
+
+Varias personas pueden inscribir **sin pisarse los datos**. El programa nunca
+reemplaza los archivos de la sede: **siempre agrega**.
+
+### Como funciona
+
+1. Cada persona abre **su** *registro temporal* (una carpeta propia, vacia):
+
+   ```powershell
+   pnf2.exe registro-crear --sede socopo --usuario "Juan Perez" --periodo 2024
+   #   -> pnfPY\registros\socopo\juan_perez_20261020_101500\
+   #        REGISTRO.JSON   (quien, sede, periodo, estado)
+   #        INSCRIPCION.csv (lo que va anotando)
+   #        INSCRITOS.csv   (ajustes de cupo)
+   #        ANULADAS.csv    (anulaciones)
+   ```
+
+2. Anota sus inscripciones (se validan igual que en la sede, **sin tocar la DATA**):
+
+   ```powershell
+   pnf2.exe registrar-inscribir 25079140 --registro <carpeta> `
+       --codigo 1205_0050162 --turno D --seccion A
+   pnf2.exe registro-estado --registro <carpeta>
+   ```
+
+3. Envia su tanda: manda la **carpeta** (es pequena) o el `.zip`.
+   ```powershell
+   pnf2.exe registro-listar --sede socopo
+   ```
+
+4. Quien administra la sede la fusiona. Primero **vista previa** y luego aplica:
+
+   ```powershell
+   pnf2.exe registro-aplicar --zip juan_perez_20261020_101500.zip --previa
+   pnf2.exe registro-aplicar --zip juan_perez_20261020_101500.zip
+   ```
+
+### Por que no se pierden datos
+
+| Garantia | Como |
+|---|---|
+| **Nunca reemplaza archivos** | `registro-aplicar` solo hace *append* al `INS####.DBF` y retoca `INSCRITOS` en `SEA####.DBF`. No reescribe el archivo completo. |
+| **No duplica** | Si la cedula ya tiene esa UC, la fila se **OMITE**. |
+| **No se aplica dos veces** | Huella de la tanda en `<DATA>\_multiusuario\aplicados.json`. |
+| **Red de seguridad** | Antes de cada escritura se copia el DBF a `<DATA>\_respaldos\` y se registra en `eventos.log`. |
+| **Sin datos personales de mas** | La tanda nace **vacia**: solo lleva lo que esa persona inscribio. |
+
+### En la ventana (GUI)
+
+Pestana **"Inscripcion (varios usuarios)"**: abrir registro temporal -> anotar
+inscripcion -> empaquetar `.zip` / cargar `.zip` / **Aplicar (AGREGAR)**.
+
+---
+
+## 7. Estado
 
 - [x] Núcleo multi-sede (detección, carga de las 4 sedes, índice por cédula).
 - [x] Historial + promedio ponderado (validado contra la bitácora).
@@ -253,10 +308,16 @@ pip install openpyxl msoffcrypto-tool pyzipper
   - [x] Clave del docente guardada en `.llave.json` → funciona si re-cifra.
   - [x] **Vista previa** (`--previa`) antes de escribir las notas.
   - [x] Respaldo/restauración en `.zip` con **AES-256** (pyzipper).
+- [x] **Inscripcion multiusuario** (`core/multiusuario.py`):
+  - [x] Registro temporal por persona (carpeta + CSV) sin copiar la DATA.
+  - [x] Aplicar fusionando con *append* (nunca reemplaza) + omision de duplicados.
+  - [x] Idempotencia por huella + respaldo automatico en `_respaldos\`.
+  - [x] Empaquetar/recibir `.zip` (AES si `pyzipper` esta instalado).
+  - [x] Pestana GUI de inscripcion multiusuario.
 - [ ] Módulos restantes: **carga académica / asignación**, **reportes**
       y **actos de grado**.
 - [ ] Constancias en PDF con membrete.
-- [ ] Empaquetado portable con PyInstaller.
+- [x] Empaquetado portable con PyInstaller (`build\dist\pnf2.exe`).
 
 ### Modelo de datos usado por la inscripción
 

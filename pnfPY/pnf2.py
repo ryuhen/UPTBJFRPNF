@@ -33,6 +33,7 @@ from core import exportar as EXP
 from core import inscripcion as INS
 from core import carga_notas as CN
 from core import historial as H
+from core import multiusuario as MU
 
 
 # --------------------------------------------------------------------------- #
@@ -342,6 +343,167 @@ def _cmd_restaurar(args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------- #
+#  Multiusuario: registro temporal (tanda) de cada persona
+# --------------------------------------------------------------------------- #
+def _cmd_registro_crear(args: argparse.Namespace) -> int:
+    """Crea una carpeta (tanda) para que una persona inscriba sin tocar la sede."""
+    reg = Registro()
+    sede = reg.sede(args.sede)
+    if sede is None:
+        print(f"Sede desconocida: {args.sede}")
+        return 1
+    tanda = MU.crear_tanda(sede, args.usuario, args.periodo,
+                           destino=args.destino, notas=args.notas or "")
+    print(f"REGISTRO TEMPORAL CREADO - {sede.nombre} - periodo {args.periodo}")
+    print(f"  Usuario : {tanda.usuario}")
+    print(f"  Carpeta : {tanda.ruta}")
+    print("  Archivos: REGISTRO.JSON, INSCRIPCION.csv, INSCRITOS.csv, ANULADAS.csv")
+    print("  Inscriba con: pnf2.py registrar-inscribir ... --registro " + tanda.ruta)
+    return 0
+
+
+def _cmd_registrar_inscribir(args: argparse.Namespace) -> int:
+    """Inscribe dentro de la tanda (no escribe en la DATA de la sede)."""
+    tanda = MU.abrir_tanda(args.registro)
+    if tanda is None:
+        print(f"No es un registro temporal valido: {args.registro}")
+        return 1
+    if tanda.estado == "aplicado":
+        print("Ese registro ya fue aplicado a la sede; cree uno nuevo.")
+        return 1
+    reg = Registro()
+    ds = reg.cargar(tanda.sede_clave)
+    periodo = args.periodo or tanda.periodo
+    sec = ds.seccion(args.codigo, args.turno, args.seccion, periodo)
+    if sec is None:
+        print("No se encontro esa seccion en la oferta. Revise con 'oferta'.")
+        return 1
+    # Se valida igual que en la sede, pero SIN escribir en los DBF.
+    val = INS.validar(ds, args.cedula, sec, periodo)
+    if not val.ok and not args.forzar:
+        print("RECHAZADO:", val.mensaje)
+        for d in val.detalle:
+            print("  - " + d)
+        return 1
+    uc = ds.uc_de(sec.codigo)
+    ced = str(args.cedula).strip()
+    tanda.anotar_inscripcion({
+        "A_ID": ced,
+        "CARRERA": sec.pnf_codigo,
+        "CODIGO": sec.codigo,
+        "TRAYECTO": sec.trayecto,
+        "TRAMO": sec.tramo,
+        "TURNO": sec.turno,
+        "SECCION": sec.seccion,
+        "ANO": periodo,
+        "CONDICION": "G",
+        "TIPO": uc.tipo if uc else "",
+        "UC": ds.unidades_credito(sec.codigo),
+        "ESPECIAL": INS._especial(sec),
+        "A_UNICA": INS._a_unica(ced, sec),
+    })
+    tanda.anotar_cupo(sec.ufo_clave, sec.turno, sec.seccion, periodo, +1)
+    print(f"OK (anotado en la tanda): {ced} -> {sec.nombre or sec.codigo} "
+          f"({sec.turno}-{sec.seccion}) periodo {periodo}")
+    for d in val.detalle:
+        print("  - " + d)
+    print(f"  Total en esta tanda: {len(tanda.inscripciones())} inscripcion(es)")
+    return 0
+
+
+def _cmd_registrar_anular(args: argparse.Namespace) -> int:
+    """Anota una anulacion dentro de la tanda (se aplica al fusionar)."""
+    tanda = MU.abrir_tanda(args.registro)
+    if tanda is None:
+        print(f"No es un registro temporal valido: {args.registro}")
+        return 1
+    tanda.anotar_anulacion(str(args.cedula).strip(), args.codigo,
+                           args.periodo or tanda.periodo)
+    print(f"Anotada la anulacion de {args.cedula} / {args.codigo}.")
+    return 0
+
+
+def _cmd_registro_estado(args: argparse.Namespace) -> int:
+    tanda = MU.abrir_tanda(args.registro)
+    if tanda is None:
+        print(f"No es un registro temporal valido: {args.registro}")
+        return 1
+    man = tanda.manifiesto()
+    print(f"REGISTRO TEMPORAL - {tanda.usuario} ({tanda.sede_clave}, {tanda.periodo})")
+    print(f"  Carpeta    : {tanda.ruta}")
+    print(f"  Estado     : {tanda.estado}")
+    print(f"  Creado     : {man.get('creado', tanda.creado)}")
+    print(f"  Dispositivo: {tanda.dispositivo}")
+    print(f"  Inscripciones anotadas: {len(tanda.inscripciones())}")
+    print(f"  Anulaciones anotadas  : {len(tanda.anuladas())}")
+    print("-" * 70)
+    for f in tanda.inscripciones():
+        print(f"  {f.get('A_ID',''):<14}{f.get('CODIGO',''):<20}"
+              f"{f.get('TURNO','')}{f.get('SECCION',''):<4} {f.get('ANO','')}")
+    return 0
+
+
+def _cmd_registro_listar(args: argparse.Namespace) -> int:
+    sede = Registro().sede(args.sede) if args.sede else None
+    tandas = MU.listar_tandas(sede)
+    print(f"REGISTROS TEMPORALES ({MU.raiz_registros()})")
+    print("-" * 80)
+    print(f"{'USUARIO':<20}{'SEDE':<12}{'PERIODO':>8}{'INS':>6}{'ANUL':>6}  ESTADO")
+    print("-" * 80)
+    for t in tandas:
+        print(f"{t.usuario[:19]:<20}{t.sede_clave:<12}{t.periodo:>8}"
+              f"{len(t.inscripciones()):>6}{len(t.anuladas()):>6}  {t.estado}")
+        print(f"    {t.ruta}")
+    print("-" * 80)
+    print(f"Total: {len(tandas)}")
+    return 0
+
+
+def _cmd_registro_aplicar(args: argparse.Namespace) -> int:
+    """Fusiona la tanda en la sede AGREGANDO (nunca reemplazando archivos)."""
+    if args.zip:
+        try:
+            tanda = MU.extraer_paquete(args.zip, args.password)
+        except Exception as e:
+            print("ERROR:", e)
+            return 1
+    else:
+        tanda = MU.abrir_tanda(args.registro)
+        if tanda is None:
+            print(f"No es un registro temporal valido: {args.registro}")
+            return 1
+
+    sede = Registro().sede(args.sede or tanda.sede_clave)
+    if sede is None:
+        print(f"Sede desconocida: {args.sede or tanda.sede_clave}")
+        return 1
+
+    ins_path = sede.archivo(f"INS{tanda.periodo}")
+    if not ins_path:
+        print(f"No existe INS{tanda.periodo}.DBF en {sede.nombre}.")
+        return 1
+
+    if args.previa:
+        print(f"VISTA PREVIA - tanda de {tanda.usuario} -> {sede.nombre}")
+        ya = 0
+        for f in tanda.inscripciones():
+            existe = MU._existe_inscripcion(ins_path, f.get("A_ID", ""),
+                                            f.get("CODIGO", ""))
+            estado = "OMITIR (ya inscrita)" if existe is not None else "AGREGAR"
+            ya += 1 if existe is not None else 0
+            print(f"  {f.get('A_ID',''):<14}{f.get('CODIGO',''):<20}{estado}")
+        print(f"\nSe agregarian {len(tanda.inscripciones()) - ya}, "
+              f"se omitirian {ya}. No se escribio nada.")
+        return 0
+
+    res = MU.aplicar_tanda(sede, tanda)
+    print("OK:" if res.ok else "ERROR:", res.mensaje)
+    for d in res.detalle:
+        print("  - " + d)
+    return 0 if res.ok else 1
+
+
+# --------------------------------------------------------------------------- #
 #  GUI (selector de sede)
 # --------------------------------------------------------------------------- #
 def _gui() -> int:
@@ -464,6 +626,56 @@ def _parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("estado", help="Resumen de una sede.")
     sp.add_argument("--sede", required=True)
     sp.set_defaults(func=_cmd_estado)
+
+    # --- Multiusuario: registro temporal --------------------------------- #
+    sp = sub.add_parser("registro-crear",
+                        help="Crea un registro temporal (tanda) para un usuario.")
+    sp.add_argument("--sede", required=True)
+    sp.add_argument("--usuario", required=True)
+    sp.add_argument("--periodo", required=True)
+    sp.add_argument("--destino", default=None)
+    sp.add_argument("--notas", default=None)
+    sp.set_defaults(func=_cmd_registro_crear)
+
+    sp = sub.add_parser("registrar-inscribir",
+                        help="Inscribe dentro de un registro temporal.")
+    sp.add_argument("cedula")
+    sp.add_argument("--registro", required=True)
+    sp.add_argument("--codigo", required=True)
+    sp.add_argument("--turno", required=True)
+    sp.add_argument("--seccion", required=True)
+    sp.add_argument("--periodo", default=None)
+    sp.add_argument("--forzar", action="store_true")
+    sp.set_defaults(func=_cmd_registrar_inscribir)
+
+    sp = sub.add_parser("registrar-anular",
+                        help="Anota una anulacion dentro de un registro temporal.")
+    sp.add_argument("cedula")
+    sp.add_argument("--registro", required=True)
+    sp.add_argument("--codigo", required=True)
+    sp.add_argument("--periodo", default=None)
+    sp.set_defaults(func=_cmd_registrar_anular)
+
+    sp = sub.add_parser("registro-estado",
+                        help="Muestra el contenido de un registro temporal.")
+    sp.add_argument("--registro", required=True)
+    sp.set_defaults(func=_cmd_registro_estado)
+
+    sp = sub.add_parser("registro-listar",
+                        help="Lista los registros temporales existentes.")
+    sp.add_argument("--sede", default=None)
+    sp.set_defaults(func=_cmd_registro_listar)
+
+    sp = sub.add_parser("registro-aplicar",
+                        help="Fusiona (AGREGA) un registro temporal en la sede.")
+    g = sp.add_mutually_exclusive_group(required=True)
+    g.add_argument("--registro", default=None)
+    g.add_argument("--zip", default=None)
+    sp.add_argument("--sede", default=None)
+    sp.add_argument("--password", default=None)
+    sp.add_argument("--previa", action="store_true",
+                    help="Muestra que se agregaria SIN escribir nada.")
+    sp.set_defaults(func=_cmd_registro_aplicar)
 
     sp = sub.add_parser("buscar", help="Datos de un estudiante por cedula.")
     sp.add_argument("cedula")

@@ -60,9 +60,31 @@ env/
 .ruff_cache/
 
 # --- Build / PyInstaller ---------------------------------------------------
-build/
-dist/
+# Los patrones con '/' se anclan a la raiz del repo: pnfPY/build/pnf2.spec SI
+# se versiona; solo se ignoran los artefactos generados.
+/build/work/
+/build/dist/
+/build/PRUEBA_pnf2/
+/build/*.toc
+/pnfPY/build/work/
+/pnfPY/build/dist/
+/pnfPY/build/PRUEBA_pnf2/
 *.spec.bak
+
+# --- Datos del sistema (bases y registros con datos personales) -------------
+# En el repo van SOLO el codigo y la documentacion. Los DBF y los registros
+# temporales se quedan en el equipo de cada sede.
+pnfPY/datos/
+pnfPY/data/
+pnfPY/DATA/
+pnfPY/registros/
+pnfPY/exportaciones/
+pnfPY/cargas_notas/
+**/_respaldos/
+**/_multiusuario/
+sede.local.json
+**/clave_maestra.json
+**/*.llave.json
 
 # --- Configuracion local con credenciales / rutas de esta maquina ----------
 config.local.json

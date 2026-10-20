@@ -20,6 +20,7 @@ from .exportar import (
 )
 from . import inscripcion
 from . import carga_notas
+from . import multiusuario
 
 __all__ = [
     "Sede", "descubrir_sedes", "obtener_sede",
@@ -27,5 +28,5 @@ __all__ = [
     "DataStore", "Estudiante", "Inscripcion", "UC", "Seccion",
     "Registro",
     "exportar_sede", "exportar_todas", "instalar_desde_zip", "ResultadoExport",
-    "inscripcion", "carga_notas",
+    "inscripcion", "carga_notas", "multiusuario",
 ]
