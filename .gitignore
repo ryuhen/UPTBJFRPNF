@@ -1,0 +1,78 @@
+# ==========================================================================
+# Repo propio de "Sistema Juan / Socopo" (reversa de pnf.exe + pnfPY)
+# NO es parte del repo CASRCESUPABASE.
+# ==========================================================================
+
+# --- Repos de terceros clonados dentro de esta carpeta --------------------
+# Cada uno ya trae su propio .git y su propio remoto; nunca se versionan aqui.
+otros proyectos/
+
+# Clon del proyecto "rea" (github.com/morluto/rea) -> tiene su propio .git
+rea/
+
+# --- Bases de datos del sistema legado (datos personales) -----------------
+DATA/
+DATA - copia/
+*.dbf
+*.DBF
+*.cdx
+*.CDX
+*.fpt
+*.FPT
+*.dbt
+*.DBT
+*.nsx
+*.mem
+*.MEM
+
+# --- Datos estadisticos de estudiantes (contiene datos personales) --------
+dataestudiantil2026/
+*.xlsx
+*.xls
+*.ods
+*.csv
+*.zip
+*.rar
+~$*
+
+# --- Binarios y artefactos de reversa pesados ------------------------------
+# El EXE se guarda fuera del repo (o con Git LFS si algun dia hace falta).
+*.exe
+*.dll
+*.ocx
+pnf.exe
+
+# Salidas generadas por los scripts de analisis
+pnf_strings.txt
+_reversa/
+pcode_hits.txt
+
+# --- Python ----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Build / PyInstaller ---------------------------------------------------
+build/
+dist/
+*.spec.bak
+
+# --- Configuracion local con credenciales / rutas de esta maquina ----------
+config.local.json
+*.local.json
+.env
+.env.*
+
+# --- Sistema operativo y editores -----------------------------------------
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.tmp
