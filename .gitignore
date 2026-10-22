@@ -98,3 +98,8 @@ desktop.ini
 .vscode/
 .idea/
 *.tmp
+
+# Scripts de verificacion locales
+/ pnfPY/_verify.py
+pnfPY/_verify.py
+pnfPY/_regresion_*.py
