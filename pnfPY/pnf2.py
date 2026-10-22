@@ -690,13 +690,59 @@ def _parser() -> argparse.ArgumentParser:
     return p
 
 
+def _proteger_codigos(argv: list[str]) -> list[str]:
+    """Deja que un codigo de UC que empieza por '-' se acepte como valor.
+
+    El legado usa codigos como ``-CC14PIU-1-011``. argparse ve un token que
+    empieza por '-' y lo confunde con una opcion. Antes de parsear:
+
+      * ``--codigo <valor>`` (o ``--registro``/``--sede``/``--destino``) se
+        convierte en ``--codigo=<valor>``, que es inequivoco;
+      * un valor suelto que parece codigo de UC y que es el ULTIMO token se
+        deja tal cual precedido de ``--``. Si hay mas argumentos despues, se
+        mueve al final para no convertir las opciones siguientes en
+        posicionales.
+    """
+    out: list[str] = []
+    sueltos: list[str] = []
+    i = 0
+    while i < len(argv):
+        tok = argv[i]
+        if tok in ("--codigo", "--registro", "--sede", "--destino") and i + 1 < len(argv):
+            out.append(f"{tok}={argv[i + 1]}")
+            i += 2
+            continue
+        if tok.startswith("-") and not tok.startswith("--") and _parece_codigo(tok):
+            sueltos.append(tok)          # se colocan al final, tras '--'
+            i += 1
+            continue
+        out.append(tok)
+        i += 1
+    if sueltos:
+        out.append("--")
+        out.extend(sueltos)
+    return out
+
+
+def _parece_codigo(token: str) -> bool:
+    """True si el token parece un codigo de UC del legado (no una opcion)."""
+    if token.startswith("--"):
+        return False
+    # '-CC14PIU-1-011' -> lleva guiones internos; '-h' / '-v' no.
+    return len(token) > 2 and any(c.isdigit() for c in token)
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = argv if argv is not None else sys.argv[1:]
     if not argv:
         return _gui()
-    args = _parser().parse_args(argv)
+    parser = _parser()
+    try:
+        args = parser.parse_args(_proteger_codigos(argv))
+    except SystemExit:
+        raise
     if not getattr(args, "func", None):
-        _parser().print_help()
+        parser.print_help()
         return 0
     return args.func(args)
 
