@@ -191,6 +191,9 @@ class DataStore:
         self.faltantes_uc: set[str] = set()
         self.cargado = False
         self.advertencias: list[str] = []
+        #: Si es True, inscribir()/anular() NO recargan la sede (lo hace el
+        #: llamador una sola vez con refrescar()). Evita recargar N veces.
+        self.refresco_diferido = False
 
     # ------------------------------------------------------------------ #
     #  Carga
@@ -209,6 +212,24 @@ class DataStore:
         self._cargar_secciones(incluir_intersemestral)
         self.cargado = True
         return self
+
+    def refrescar(self) -> "DataStore":
+        """Vuelve a leer los DBF (tras escribir) manteniendo la misma instancia."""
+        self.cargado = False
+        self.ins.clear()
+        self.secciones.clear()
+        self.secciones_por_uc.clear()
+        self.periodos.clear()
+        self.faltantes_uc.clear()
+        self.advertencias.clear()
+        self.estudiantes.clear()
+        self.cc.clear()
+        self.docentes.clear()
+        self.ufo.clear()
+        self.ufo_por_clave.clear()
+        self.pnf.clear()
+        self.config.clear()
+        return self.cargar()
 
     def _cargar_config(self) -> None:
         path = self.sede.archivo("CONFIG")

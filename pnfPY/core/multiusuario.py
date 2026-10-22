@@ -49,9 +49,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from . import dbf_reader
-from .inscripcion import (
-    _ajustar_inscritos, _dbf_header_info, _fmt_field,
-)
+from .inscripcion import _dbf_header_info, _fmt_field
 from .sedes import Sede
 
 
@@ -238,17 +236,25 @@ class RegistroTemporal:
 
     def anotar_cupo(self, ufo_clave: str, turno: str, seccion: str,
                     periodo: str, delta: int) -> None:
-        """Acumula el ajuste de INSCRITOS para esa seccion."""
+        """Acumula el ajuste de INSCRITOS para esa seccion.
+
+        La clave se compara ya normalizada (la clave UFO se guarda en el DBF
+        con espacios de relleno; aqui se usa .strip() para no crear filas
+        distintas por un espacio sobrante).
+        """
+        clave = (str(ufo_clave).strip(), str(turno).strip(),
+                 str(seccion).strip(), str(periodo).strip())
         filas = self.cupos()
         for f in filas:
-            if (f["UFO_CLAVE"] == ufo_clave and f["TURNO"] == turno
-                    and f["SECCION"] == seccion and f["PERIODO"] == str(periodo)):
+            if (str(f.get("UFO_CLAVE", "")).strip(), str(f.get("TURNO", "")).strip(),
+                    str(f.get("SECCION", "")).strip(),
+                    str(f.get("PERIODO", "")).strip()) == clave:
                 f["DELTA"] = str(int(f["DELTA"] or 0) + delta)
                 break
         else:
             filas.append({
-                "UFO_CLAVE": ufo_clave, "TURNO": turno, "SECCION": seccion,
-                "PERIODO": str(periodo), "DELTA": str(delta), "INSCRITOS": "",
+                "UFO_CLAVE": clave[0], "TURNO": clave[1], "SECCION": clave[2],
+                "PERIODO": clave[3], "DELTA": str(delta), "INSCRITOS": "",
             })
         _escribir_csv(self.archivo_cupos, COL_CUPOS, filas)
         self.guardar()
@@ -487,11 +493,12 @@ def _borrar_por_comprobante(path: str, cedula: str, codigo: str) -> bool:
     idx = _existe_inscripcion(path, cedula, codigo)
     if idx is None:
         return False
-    _n, hlen, rlen = _dbf_header_info(path)  # _n: no se usa
+    _n, hlen, rlen = _dbf_header_info(path)
     with open(path, "r+b") as fh:
         fh.seek(hlen + idx * rlen)
         fh.write(b"*")
     return True
+
 
 def aplicar_tanda(sede: Sede, tanda: RegistroTemporal,
                   usuario: str | None = None) -> ResultadoAplicacion:
@@ -542,18 +549,17 @@ def aplicar_tanda(sede: Sede, tanda: RegistroTemporal,
             res.anuladas += 1
             res.detalle.append(f"ANULADA: {ced} {cod}")
 
-    # Contadores INSCRITOS: se recalcula desde el INS real (no se suma a ciegas)
+    # Contadores INSCRITOS: solo para las secciones tocadas por ESTA tanda se
+    # recalcula INSCRITOS desde las inscripciones reales del INS####.DBF, asi
+    # nunca queda descuadrado ni depende de sumar deltas a ciegas.
+    secciones: set[tuple[str, str, str]] = set()
     for c in tanda.cupos():
-        try:
-            delta = int(c.get("DELTA") or 0)
-        except ValueError:
-            delta = 0
-        if not delta:
-            continue
-        _ajustar_inscritos_por_clave(sede, c.get("UFO_CLAVE", ""),
-                                     c.get("TURNO", ""), c.get("SECCION", ""),
-                                     c.get("PERIODO") or tanda.periodo, delta)
-        res.cupos += 1
+        secciones.add(((c.get("UFO_CLAVE") or "").strip(),
+                       (c.get("TURNO") or "").strip(),
+                       (c.get("SECCION") or "").strip()))
+    if secciones:
+        n_cupos = _recalcular_inscritos(sede, tanda.periodo, secciones)
+        res.cupos += n_cupos
 
     _marcar_aplicada(sede, tanda, res)
     _registrar_evento(sede.data_dir,
@@ -566,26 +572,79 @@ def aplicar_tanda(sede: Sede, tanda: RegistroTemporal,
     return res
 
 
-def _ajustar_inscritos_por_clave(sede: Sede, ufo_clave: str, turno: str,
-                                 seccion: str, periodo: str, delta: int) -> None:
+#: Cache de la cuenta por seccion (se invalida al cambiar el INS del periodo)
+_CACHE_INSCRITOS: dict[tuple, tuple[float, dict]] = {}
+
+
+def _conteo_por_seccion(sede: Sede, periodo: str) -> dict[tuple[str, str, str], int]:
+    """Cuenta en el INS####.DBF cuantas inscripciones vivas hay por seccion.
+
+    La clave es (UFO_CLAVE, TURNO, SECCION) que es como lo identifica el SEA.
+    Se cachea por (ruta, mtime, tamano) para no releer un INS de 1 MB por
+    cada seccion de la misma tanda.
+    """
+    ins_path = sede.archivo(f"INS{periodo}")
+    if not ins_path or not os.path.isfile(ins_path):
+        return {}
+    st = os.stat(ins_path)
+    clave_cache = (ins_path, st.st_mtime, st.st_size)
+    cache = _CACHE_INSCRITOS.get(clave_cache)
+    if cache is not None:
+        return cache
+
+    campos = {"CARRERA", "CODIGO", "TURNO", "SECCION"}
+    tabla = dbf_reader.read_dbf(ins_path, fields=campos)
+    conteo: dict[tuple[str, str, str], int] = {}
+    for r in tabla.rows:
+        carrera = str(r.get("CARRERA") or "").strip()
+        codigo = str(r.get("CODIGO") or "").strip()
+        if not codigo:
+            continue
+        k = (f"{carrera}{codigo}", str(r.get("TURNO") or "").strip(),
+             str(r.get("SECCION") or "").strip())
+        conteo[k] = conteo.get(k, 0) + 1
+
+    _CACHE_INSCRITOS.clear()  # solo hace falta el ultimo periodo consultado
+    _CACHE_INSCRITOS[clave_cache] = conteo
+    return conteo
+
+
+def _recalcular_inscritos(sede: Sede, periodo: str,
+                          secciones: set[tuple[str, str, str]]) -> int:
+    """Fija INSCRITOS en el SEA#### con el conteo real del INS####.
+
+    Devuelve cuantas filas del SEA se actualizaron.
+    """
     path = sede.archivo(f"SEA{periodo}")
     if not path:
-        return
+        return 0
     tabla = dbf_reader.read_dbf(path)
     fld = tabla.get_field("INSCRITOS")
     if fld is None:
-        return
-    _n, hlen, rlen = _dbf_header_info(path)  # _n: no se usa
+        return 0
+    conteo = _conteo_por_seccion(sede, periodo)
+    _n, hlen, rlen = _dbf_header_info(path)
+
+    cambios: list[tuple[int, int]] = []
+    for i, r in enumerate(tabla.rows):
+        k = (str(r.get("UFO_CLAVE") or "").strip(),
+             str(r.get("TURNO") or "").strip(),
+             str(r.get("SECCION") or "").strip())
+        if k not in secciones:
+            continue
+        real = conteo.get(k, 0)
+        actual = int(r.get("INSCRITOS") or 0)
+        if real != actual:
+            cambios.append((i, real))
+    if not cambios:
+        return 0
+
     escribir_dbf(path, "contador_inscritos")
     with open(path, "r+b") as fh:
-        for i, r in enumerate(tabla.rows):
-            if (str(r.get("UFO_CLAVE")).strip() == ufo_clave.strip()
-                    and str(r.get("TURNO")).strip() == turno.strip()
-                    and str(r.get("SECCION")).strip() == seccion.strip()):
-                nuevo = max(0, int(r.get("INSCRITOS") or 0) + delta)
-                fh.seek(hlen + i * rlen + fld.offset)
-                fh.write(str(nuevo).rjust(fld.length).encode("latin-1"))
-                return
+        for i, real in cambios:
+            fh.seek(hlen + i * rlen + fld.offset)
+            fh.write(str(real).rjust(fld.length).encode("latin-1"))
+    return len(cambios)
 
 
 # --------------------------------------------------------------------------- #

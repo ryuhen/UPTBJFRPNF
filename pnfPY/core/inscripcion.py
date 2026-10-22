@@ -283,13 +283,10 @@ def inscribir(ds: DataStore, cedula: str, seccion: Seccion,
     # Actualizar contador de inscritos en la oferta (SEA####)
     _ajustar_inscritos(ds, seccion, +1)
 
-    # Refrescar el indice en memoria
-    ds.cargado = False
-    ds.ins.clear()
-    ds.secciones.clear()
-    ds.secciones_por_uc.clear()
-    ds.periodos.clear()
-    ds.cargar()
+    # Refrescar el indice en memoria (se puede diferir con ds.refresco_diferido
+    # para no recargar la sede N veces al aplicar una tanda completa).
+    if not getattr(ds, "refresco_diferido", False):
+        ds.refrescar()
 
     return Resultado(True, f"Inscrito en {seccion.nombre or seccion.codigo} "
                            f"({seccion.turno}-{seccion.seccion}).")
@@ -332,7 +329,8 @@ def anular(ds: DataStore, cedula: str, codigo: str,
     ds.cargado = False
     ds.ins.clear()
     ds.periodos.clear()
-    ds.cargar()
+    if not getattr(ds, "refresco_diferido", False):
+        ds.cargar()
     return Resultado(True, f"Inscripcion anulada: {codigo} ({periodo}).")
 
 
